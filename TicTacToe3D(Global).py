@@ -1,15 +1,9 @@
 from tkinter import *
 from tkinter import messagebox, simpledialog
-
-
 # =============== IMPORTS DE RED ======================
-
 import socket        # Comunicación entre computadoras
 import threading     # Evita que Tkinter se congele
-
-
 # =============== VARIABLES DE RED ====================
-
 conexion = None
 es_servidor = False
 mi_turno = False
