@@ -8,18 +8,45 @@ conexion = None
 es_servidor = False
 mi_turno = False
 
+PUERTO = 5000
+
+def obtener_ip_local():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+    except:
+        ip = "127.0.0.1"
+    s.close()
+    return ip
+
 def iniciar_servidor():
-    global conexion, es_servidor, mi_turno
+    global es_servidor, mi_turno
     es_servidor = True
     mi_turno = True
 
+    ip = obtener_ip_local()
+    messagebox.showinfo(
+        "Servidor",
+        f"Servidor iniciado\nIP: {ip}\nPuerto: {PUERTO}\n\nComparte esta IP con el cliente"
+    )
+
+    threading.Thread(target=esperar_cliente, daemon=True).start()
+
+def esperar_cliente():
+    global conexion
     servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    servidor.bind(("0.0.0.0", 5000))
+    servidor.bind(("0.0.0.0", PUERTO))
     servidor.listen(1)
 
-    messagebox.showinfo("Servidor", "Esperando al otro jugador...")
     conexion, addr = servidor.accept()
-    messagebox.showinfo("Conectado", f"Jugador conectado desde {addr}")
+    tablero.after(
+        0,
+        lambda: messagebox.showinfo(
+            "Conectado",
+            f"Cliente conectado desde {addr}"
+        )
+    )
 
     threading.Thread(target=escuchar_jugadas, daemon=True).start()
 
@@ -28,9 +55,17 @@ def iniciar_cliente():
     es_servidor = False
     mi_turno = False
 
-    ip = simpledialog.askstring("Cliente", "IP del servidor:")
-    conexion = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    conexion.connect((ip, 5000))
+    ip = simpledialog.askstring(
+        "Cliente",
+        "Ingresa la IP del servidor:"
+    )
+
+    try:
+        conexion = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        conexion.connect((ip, PUERTO))
+    except Exception as e:
+        messagebox.showerror("Error", f"No se pudo conectar\n{e}")
+        return
 
     threading.Thread(target=escuchar_jugadas, daemon=True).start()
 
@@ -54,28 +89,24 @@ def escuchar_jugadas():
             break
 
 def ejecutar_jugada_remota(i):
-    botonClick(i)
+    botonClick(i, remoto=True)
 
 # ===================== JUEGO =====================
 
 def crearBoton(valor,i):
-    return Button(tablero,text=valor,width=5,height=1,font=("Helvetica",15),
-                  command=lambda:botonClick(i))
+    return Button(
+        tablero,
+        text=valor,
+        width=5,
+        height=1,
+        font=("Helvetica",15),
+        command=lambda: botonClick(i)
+    )
 
-def seguir_o_finalizar():
-    global g
-    resp = messagebox.askyesno("FINALIZAR", "¿Quieres continuar?")
-    if resp:
-        if g:
-            inicio()
-    else:
-        tablero.destroy()
-    return resp
-
-def botonClick(i):
+def botonClick(i, remoto=False):
     global jugador,jugadas,X,Y,Z,g,mi_turno        
 
-    if not mi_turno:
+    if not remoto and not mi_turno:
         return
 
     Z=int(i/16)
@@ -84,7 +115,6 @@ def botonClick(i):
     X=y%4
 
     if g:
-        seguir_o_finalizar()
         return
 
     if not jugadas[Z][Y][X]:
@@ -97,55 +127,51 @@ def botonClick(i):
             jugadas[Z][Y][X]=1
             botones[i].config(text=texto, fg='red')
 
-        enviar_jugada(i)
-        mi_turno = False
+        if not remoto:
+            enviar_jugada(i)
+            mi_turno = False
 
         if horizontal() or vertical() or profundidad():
             ganador()
             return
 
         jugador = not jugador
-        texto=Label(tablero, text='Jugador '+str(jugador+1),font='arial, 20', fg='green')
-        texto.place(x=500, y=620)
-    else:
-        texto=Label(tablero, text='Jugada Inválida ',font='arial, 20', fg='green')
-        texto.place(x=300, y=5)
+        Label(
+            tablero,
+            text='Jugador '+str(jugador+1),
+            font='arial 20',
+            fg='green'
+        ).place(x=500, y=620)
 
 def ganador():
-    global jugador,g
-    texto=Label(tablero,text='Jugador '+str(jugador+1)+' GANO',font='arial, 20', fg='blue')
-    texto.place(x=300, y=5)
+    global g
     g=1
+    Label(
+        tablero,
+        text='GANADOR',
+        font='arial 20',
+        fg='blue'
+    ).place(x=300, y=5)
 
 def horizontal():
-    s=0
-    for x in range(4):
-        s+=jugadas[Z][Y][x]
-    return abs(s)==4
+    return abs(sum(jugadas[Z][Y])) == 4
 
 def vertical():
-    s=0
-    for y in range(4):
-        s+=jugadas[Z][y][X]
-    return abs(s)==4
+    return abs(sum(jugadas[Z][y][X] for y in range(4))) == 4
 
 def profundidad():
-    s=0
-    for z in range(4):
-        s+=jugadas[z][Y][X]
-    return abs(s)==4
+    return abs(sum(jugadas[z][Y][X] for z in range(4))) == 4
 
 def inicio():
-    global jugadas, jugador, g, mi_turno
+    global jugador, g, mi_turno
     for z in range(4):
         for y in range(4):
             for x in range(4):
                 jugadas[z][y][x]=0
                 botones[z*16+y*4+x].config(text='',bg='white')
-    g = jugador = 0
+
+    jugador = g = 0
     mi_turno = es_servidor
-    texto=Label(tablero, text='Jugador '+str(jugador+1),font='arial, 20', fg='green')
-    texto.place(x=500, y=620)
 
 # ===================== INTERFAZ =====================
 
@@ -154,7 +180,7 @@ botones=[]
 g=0
 
 tablero=Tk()
-tablero.title('Tic Tac Toe 3D')
+tablero.title('Tic Tac Toe 3D - Red LAN')
 tablero.geometry("1040x720+100+5")
 tablero.resizable(0, 0)
 
@@ -179,9 +205,4 @@ else:
     iniciar_cliente()
 
 inicio()
-
-botonexit = Button(tablero,text='Exit',width=5,height=1,font=("Helvetica",15),
-                   command=seguir_o_finalizar)
-botonexit.grid(row=0,column=10)
-
 tablero.mainloop()
